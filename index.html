@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#060913">
+  <title>AquaPulse IoT | Monitor de Caixa d'Água Multi-Condomínio</title>
+  <meta name="description" content="Painel de monitoramento em tempo real de nível de água, bombas e telemetria elétrica para condomínios residenciais e comerciais com ESP32 e Firebase.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Estilos Customizados -->
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+  <!-- Elementos de iluminação ambiente -->
+  <div class="ambient-glow glow-top-left"></div>
+  <div class="ambient-glow glow-bottom-right"></div>
+
+  <div class="app-wrapper">
+    <!-- Topo da Aplicação -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1 id="condo-title">Monitor de Caixa d'Água</h1>
+          <div class="brand-subtitle">
+            <span>Condomínio ID:</span>
+            <span class="condo-badge" id="condo-badge-id">CARREGANDO...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="status-pill" id="connection-status-pill">
+          <span class="pulse-dot"></span>
+          <span id="connection-status-text">Conectando...</span>
+        </div>
+
+        <button class="action-btn" id="demo-mode-btn" title="Simular dados sem hardware conectado">
+          ✨ Modo Demo
+        </button>
+
+        <button class="action-btn" id="switch-condo-btn" title="Trocar condomínio">
+          🏢 Condomínios
+        </button>
+
+        <button class="action-btn" id="settings-btn" title="Configurar Firebase">
+          ⚙️ Config
+        </button>
+      </div>
+    </header>
+
+    <!-- Barra de Alertas Dinâmica -->
+    <div class="alert-banner" id="alert-banner">
+      <div class="alert-content">
+        <span class="alert-icon">⚠️</span>
+        <span id="alert-message">Aviso de Nível</span>
+      </div>
+    </div>
+
+    <!-- Grid Principal do Dashboard -->
+    <main class="dashboard-grid">
+      
+      <!-- Coluna Esquerda: Reservatório e Nível -->
+      <section class="glass-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+              </svg>
+            </div>
+            <h2 class="card-title">Reservatório Principal</h2>
+          </div>
+          <span class="card-tag">TEMPO REAL</span>
+        </div>
+
+        <div class="tank-visualizer-container">
+          <!-- Palco 3D do Tanque -->
+          <div class="tank-interactive-stage">
+            
+            <!-- Cilindro de Vidro -->
+            <div class="tank-cylinder">
+              <div class="tank-glass-sheen"></div>
+              <div id="bubbles-container"></div>
+              
+              <!-- Corpo da Água -->
+              <div class="tank-water-fill" id="water-fill" style="height: 60%;">
+                <div class="wave-layer wave-1"></div>
+                <div class="wave-layer wave-2"></div>
+              </div>
+            </div>
+
+            <!-- Régua Graduada -->
+            <div class="tank-ruler">
+              <div class="ruler-mark" data-val="100">
+                <span class="ruler-line"></span>
+                <span>100% (Cheio)</span>
+              </div>
+              <div class="ruler-mark" data-val="75">
+                <span class="ruler-line"></span>
+                <span>75%</span>
+              </div>
+              <div class="ruler-mark" data-val="50">
+                <span class="ruler-line"></span>
+                <span>50%</span>
+              </div>
+              <div class="ruler-mark" data-val="25">
+                <span class="ruler-line"></span>
+                <span>25%</span>
+              </div>
+              <div class="ruler-mark" data-val="0">
+                <span class="ruler-line"></span>
+                <span>0% (Vazio)</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Estatísticas Numéricas -->
+          <div class="tank-stats-row">
+            <div class="stat-item">
+              <div class="stat-label">Nível Atual</div>
+              <div class="stat-value primary" id="water-percent">--%</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Volume Estimado</div>
+              <div class="stat-value" id="water-volume">-- L</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-label">Capacidade</div>
+              <div class="stat-value" id="water-capacity">10.000 L</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Coluna Direita: Bomba e Telemetria Elétrica -->
+      <div class="telemetry-column">
+        
+        <!-- Card: Status da Bomba -->
+        <section class="glass-card pump-card offline-pump" id="pump-status-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <div class="card-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--color-success);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                  <path d="M2 12h20"/>
+                </svg>
+              </div>
+              <h2 class="card-title">Conjunto Moto-Bomba</h2>
+            </div>
+            <span class="card-tag">STATUS</span>
+          </div>
+
+          <div class="pump-display">
+            <div class="pump-turbine-wrapper">
+              <div class="pump-ring"></div>
+              <svg class="pump-turbine-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            </div>
+            <div class="pump-info">
+              <div class="pump-state-headline inactive" id="pump-state-text">BOMBA EM ESPERA</div>
+              <div class="pump-desc" id="pump-state-desc">Aguardando comando automático do nível</div>
+            </div>
+          </div>
+
+          <!-- Métricas Elétricas -->
+          <div class="metrics-grid">
+            <div class="metric-mini-box">
+              <div class="metric-mini-label">Tensão</div>
+              <div class="metric-mini-value" id="metric-voltage">220 V</div>
+            </div>
+            <div class="metric-mini-box">
+              <div class="metric-mini-label">Corrente</div>
+              <div class="metric-mini-value" id="metric-current">0.0 A</div>
+            </div>
+            <div class="metric-mini-box">
+              <div class="metric-mini-label">Potência</div>
+              <div class="metric-mini-value" id="metric-power">0 W</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Card: Diagnóstico & Hardware -->
+        <section class="glass-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <div class="card-icon" style="background: rgba(79, 172, 254, 0.1); color: var(--color-secondary);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                  <line x1="6" y1="6" x2="6.01" y2="6"/>
+                  <line x1="6" y1="18" x2="6.01" y2="18"/>
+                </svg>
+              </div>
+              <h2 class="card-title">Telemetria & ESP32</h2>
+            </div>
+            <span class="card-tag">SISTEMA</span>
+          </div>
+
+          <div class="diag-list">
+            <div class="diag-row">
+              <span class="diag-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                Sinal Wi-Fi
+              </span>
+              <span class="diag-value" id="diag-wifi">-- dBm</span>
+            </div>
+            <div class="diag-row">
+              <span class="diag-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Tempo em Operação (Uptime)
+              </span>
+              <span class="diag-value" id="diag-uptime">--</span>
+            </div>
+            <div class="diag-row">
+              <span class="diag-label">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Último Batimento (Heartbeat)
+              </span>
+              <span class="diag-value" id="diag-heartbeat">Aguardando...</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="app-footer">
+      <div>AquaPulse IoT &bull; Sistema Multi-Condomínio com ESP32 & Firebase Realtime Database</div>
+      <div class="footer-links">
+        <a href="https://github.com" target="_blank" class="footer-link">GitHub Pages Ready</a>
+        <a href="https://console.firebase.google.com" target="_blank" class="footer-link">Firebase Console</a>
+      </div>
+    </footer>
+  </div>
+
+  <!-- MODAL: Seletor de Condomínios (Portal de Entrada) -->
+  <div class="portal-modal" id="portal-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button class="close-modal-btn" id="close-portal-modal" aria-label="Fechar">&times;</button>
+        <h2>🏢 Seleção de Condomínio</h2>
+        <p>Escolha um dos clientes cadastrados ou informe o identificador da URL (?id=...):</p>
+      </div>
+
+      <div class="condo-preset-list">
+        <button class="condo-preset-btn" data-id="condominio_alpha">
+          <span class="preset-name">Condomínio Alpha</span>
+          <span class="preset-id">?id=condominio_alpha</span>
+        </button>
+        <button class="condo-preset-btn" data-id="residencial_flores">
+          <span class="preset-name">Residencial Flores</span>
+          <span class="preset-id">?id=residencial_flores</span>
+        </button>
+        <button class="condo-preset-btn" data-id="torre_horizonte">
+          <span class="preset-name">Torre Horizonte</span>
+          <span class="preset-id">?id=torre_horizonte</span>
+        </button>
+      </div>
+
+      <div class="custom-id-input-group">
+        <input type="text" class="custom-id-input" id="custom-condo-input" placeholder="Digite outro ID (ex: bloco_b)">
+        <button class="primary-btn" id="btn-load-custom-id">Acessar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Configuração Rápida do Firebase -->
+  <div class="portal-modal" id="settings-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button class="close-modal-btn" id="close-settings-modal" aria-label="Fechar">&times;</button>
+        <h2>⚙️ Configuração do Firebase</h2>
+        <p>Insira suas credenciais do Firebase para conectar à sua base real sem alterar o código:</p>
+      </div>
+
+      <div class="config-group">
+        <label for="input-api-key">Chave de API da Web (API Key):</label>
+        <input type="text" id="input-api-key" placeholder="AIzaSy...">
+      </div>
+
+      <div class="config-group">
+        <label for="input-db-url">Database URL do Realtime Database:</label>
+        <input type="text" id="input-db-url" placeholder="https://seu-projeto-default-rtdb.firebaseio.com/">
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.25rem;">
+        <button class="primary-btn" id="btn-save-settings">Salvar Credenciais</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script Modular da Aplicação -->
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
